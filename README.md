@@ -1,13 +1,8 @@
-# SOVA
+# Sova
 
 Sova is an app which allows to define a time or a timer to set a computer into sleep or hibernate mode or to turn it off altogether.
-
-## About
-
-This is the official Wails Vue-TS template.
-
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+It was built using https://wails.io/, which is also needed for building it.
+It uses vuejs and typescript for the frontend.
 
 ## Live Development
 
@@ -19,3 +14,5 @@ to this in your browser, and you can call your Go code from devtools.
 ## Building
 
 To build a redistributable, production mode package, use `wails build`.
+
+For setting up `wails` see https://wails.io/docs/gettingstarted/installation
