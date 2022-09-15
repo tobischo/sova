@@ -9,7 +9,7 @@ import {
 } from '../../wailsjs/go/main/App'
 
 const data = reactive({
-  description: "Select the time or duration and click schedule to enable it.",
+  description: "Select the duration and click schedule to enable it.",
   resultText: "",
   currentTime: "",
   remainingTime: "",
