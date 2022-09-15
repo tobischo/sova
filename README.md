@@ -6,6 +6,10 @@ Sova is an app which allows to define a time or a timer to set a computer into s
 It was built using https://wails.io/, which is also needed for building it.
 It uses vuejs and typescript for the frontend.
 
+## UI
+
+<img src="images/sova-ui.png" alt="Sova Icon" width="400"/>
+
 ## Live Development
 
 To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
