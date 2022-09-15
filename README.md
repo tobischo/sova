@@ -1,5 +1,7 @@
 # Sova
 
+<img src="build/appicon.png" alt="Sova Icon" width="200"/>
+
 Sova is an app which allows to define a time or a timer to set a computer into sleep or hibernate mode or to turn it off altogether.
 It was built using https://wails.io/, which is also needed for building it.
 It uses vuejs and typescript for the frontend.
