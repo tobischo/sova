@@ -36,7 +36,7 @@ const (
 )
 
 func RGB(r, g, b uint8) int32 {
-	var col = int32(b)
+	col := int32(b)
 	col = col<<8 | int32(g)
 	col = col<<8 | int32(r)
 	return col
@@ -113,6 +113,9 @@ type Options struct {
 	//
 	// !! Please keep in mind when disabling this feature, this also allows malicious software to inject into the WebView2 !!
 	WebviewDisableRendererCodeIntegrity bool
+
+	// Configure whether swipe gestures should be enabled
+	EnableSwipeGestures bool
 }
 
 func DefaultMessages() *Messages {

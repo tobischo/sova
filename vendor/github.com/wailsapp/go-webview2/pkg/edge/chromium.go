@@ -5,7 +5,6 @@ package edge
 
 import (
 	"errors"
-	"github.com/wailsapp/go-webview2/webviewloader"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/wailsapp/go-webview2/internal/w32"
+	"github.com/wailsapp/go-webview2/webviewloader"
 	"golang.org/x/sys/windows"
 )
 
@@ -81,6 +81,22 @@ func NewChromium() *Chromium {
 	e.navigationCompleted = newICoreWebView2NavigationCompletedEventHandler(e)
 	e.processFailed = newICoreWebView2ProcessFailedEventHandler(e)
 	e.containsFullScreenElementChanged = newICoreWebView2ContainsFullScreenElementChangedEventHandler(e)
+	/*
+		// Pinner seems to panic in some cases as reported on Discord, maybe during shutdown when GC detects pinned objects
+		// to be released that have not been unpinned.
+		// It would also be better to use our ComBridge for this event handlers implementation instead of pinning them.
+		// So all COM Implementations on the go-side use the same code.
+		var pinner runtime.Pinner
+		pinner.Pin(e.envCompleted)
+		pinner.Pin(e.controllerCompleted)
+		pinner.Pin(e.webMessageReceived)
+		pinner.Pin(e.permissionRequested)
+		pinner.Pin(e.webResourceRequested)
+		pinner.Pin(e.acceleratorKeyPressed)
+		pinner.Pin(e.navigationCompleted)
+		pinner.Pin(e.processFailed)
+		pinner.Pin(e.containsFullScreenElementChanged)
+	*/
 	e.permissions = make(map[CoreWebView2PermissionKind]CoreWebView2PermissionState)
 
 	return e
@@ -315,9 +331,18 @@ func (e *Chromium) MessageReceived(sender *ICoreWebView2, args *ICoreWebView2Web
 
 	message := w32.Utf16PtrToString(_message)
 
-	obj, _ := args.GetAdditionalObjects()
-	if obj != nil && e.MessageWithAdditionalObjectsCallback != nil {
-		e.MessageWithAdditionalObjectsCallback(message, sender, args)
+	if hasCapability(e.webview2RuntimeVersion, GetAdditionalObjects) {
+		obj, err := args.GetAdditionalObjects()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if obj != nil && e.MessageWithAdditionalObjectsCallback != nil {
+			defer obj.Release()
+			e.MessageWithAdditionalObjectsCallback(message, sender, args)
+		} else if e.MessageCallback != nil {
+			e.MessageCallback(message)
+		}
 	} else if e.MessageCallback != nil {
 		e.MessageCallback(message)
 	}
@@ -519,4 +544,30 @@ func (e *Chromium) PutIsSwipeNavigationEnabled(enabled bool) error {
 		return err
 	}
 	return nil
+}
+
+func (e *Chromium) AllowExternalDrag(allow bool) error {
+	if !hasCapability(e.webview2RuntimeVersion, AllowExternalDrop) {
+		return UnsupportedCapabilityError
+	}
+	controller := e.GetController()
+	controller4 := controller.GetICoreWebView2Controller4()
+	err := controller4.PutAllowExternalDrop(allow)
+	if err != windows.DS_S_SUCCESS {
+		return err
+	}
+	return nil
+}
+
+func (e *Chromium) GetAllowExternalDrag() (bool, error) {
+	if !hasCapability(e.webview2RuntimeVersion, AllowExternalDrop) {
+		return false, UnsupportedCapabilityError
+	}
+	controller := e.GetController()
+	controller4 := controller.GetICoreWebView2Controller4()
+	result, err := controller4.GetAllowExternalDrop()
+	if err != windows.DS_S_SUCCESS {
+		return false, err
+	}
+	return result, nil
 }
