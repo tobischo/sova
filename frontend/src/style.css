@@ -1,5 +1,9 @@
 html {
     background-color: #281c2d;
+    background-image: url("assets/images/background.png");
+    background-position: center center;
+    background-size: 600px 440px;
+    background-repeat: no-repeat;
     /* background-color: rgba(27, 38, 54, 1); */
     text-align: center;
     color: white;
