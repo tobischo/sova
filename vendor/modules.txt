@@ -77,7 +77,7 @@ github.com/wailsapp/mimetype
 github.com/wailsapp/mimetype/internal/charset
 github.com/wailsapp/mimetype/internal/json
 github.com/wailsapp/mimetype/internal/magic
-# github.com/wailsapp/wails/v2 v2.8.0
+# github.com/wailsapp/wails/v2 v2.8.1
 ## explicit; go 1.20
 github.com/wailsapp/wails/v2
 github.com/wailsapp/wails/v2/internal/app
