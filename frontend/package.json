@@ -12,9 +12,9 @@
     "vue": "^3.2.37"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^3.0.3",
+    "@vitejs/plugin-vue": "^5.1.4",
     "typescript": "^4.6.4",
-    "vite": "^3.2.10",
+    "vite": "^5.4.7",
     "vue-tsc": "^0.39.5",
     "@babel/types": "^7.18.10"
   }
