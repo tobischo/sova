@@ -10,10 +10,6 @@ export function CurrentTime() {
   return window['go']['main']['App']['CurrentTime']();
 }
 
-export function Greet(arg1) {
-  return window['go']['main']['App']['Greet'](arg1);
-}
-
 export function IsScheduled() {
   return window['go']['main']['App']['IsScheduled']();
 }

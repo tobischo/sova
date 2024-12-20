@@ -28,11 +28,6 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
 
-// Greet returns a greeting for the given name
-func (a *App) Greet(name string) string {
-	return fmt.Sprintf("Hello %s, It's show time!", name)
-}
-
 func (a *App) CurrentTime() string {
 	now := time.Now().Local()
 	return now.Format("15:04:05")
@@ -93,11 +88,12 @@ func (a *App) CancelSchedule() string {
 func (a *App) triggerSleepDelayed(duration time.Duration) {
 	select {
 	case <-time.After(duration):
+		defer a.CancelSchedule()
+
 		if a.sleepTime != nil && a.sleepTime.Before(time.Now()) {
 			a.sleepTime = nil
 			a.executeSleep()
 		}
-		a.CancelSchedule()
 	case <-a.abortChan:
 	}
 }
