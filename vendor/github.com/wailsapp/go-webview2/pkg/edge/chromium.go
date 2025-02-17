@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/wailsapp/go-webview2/internal/w32"
@@ -46,7 +47,14 @@ func globalErrorHandler(err error) {
 }
 
 type Chromium struct {
-	hwnd                             uintptr
+	hwnd    uintptr
+	padding struct {
+		Left   int32
+		Top    int32
+		Right  int32
+		Bottom int32
+	}
+
 	controller                       *ICoreWebView2Controller
 	webview                          *ICoreWebView2
 	inited                           uintptr
@@ -61,7 +69,6 @@ type Chromium struct {
 	processFailed                    *ICoreWebView2ProcessFailedEventHandler
 
 	environment            *ICoreWebView2Environment
-	padding                Rect
 	webview2RuntimeVersion string
 
 	// Settings
@@ -85,6 +92,12 @@ type Chromium struct {
 
 	// Error handling
 	globalErrorCallback func(error)
+
+	shuttingDown bool
+
+	// Resize debouncing
+	lastBounds  *w32.Rect
+	resizeTimer *time.Timer
 }
 
 func NewChromium() *Chromium {
@@ -127,8 +140,11 @@ func NewChromium() *Chromium {
 	*/
 	e.permissions = make(map[CoreWebView2PermissionKind]CoreWebView2PermissionState)
 	e.globalErrorCallback = globalErrorHandler
-
 	return e
+}
+
+func (e *Chromium) ShuttingDown() {
+	e.shuttingDown = true
 }
 
 func (e *Chromium) errorCallback(err error) {
@@ -197,14 +213,30 @@ func (e *Chromium) Embed(hwnd uintptr) bool {
 }
 
 func (e *Chromium) SetPadding(padding Rect) {
-	if e.padding.Top == padding.Top && e.padding.Bottom == padding.Bottom &&
-		e.padding.Left == padding.Left && e.padding.Right == padding.Right {
+	if e.padding.Left == padding.Left && e.padding.Top == padding.Top &&
+		e.padding.Right == padding.Right && e.padding.Bottom == padding.Bottom {
 
 		return
 	}
 
-	e.padding = padding
+	e.padding.Left = padding.Left
+	e.padding.Top = padding.Top
+	e.padding.Right = padding.Right
+	e.padding.Bottom = padding.Bottom
 	e.Resize()
+}
+
+func (e *Chromium) ResizeWithBounds(bounds *Rect) {
+    if e.hwnd == 0 {
+        return
+    }
+
+    bounds.Top += e.padding.Top
+    bounds.Bottom -= e.padding.Bottom
+    bounds.Left += e.padding.Left
+    bounds.Right -= e.padding.Right
+
+    e.SetSize(*bounds)
 }
 
 func (e *Chromium) Resize() {
@@ -212,70 +244,43 @@ func (e *Chromium) Resize() {
 		return
 	}
 
-	var bounds w32.Rect
-	_, _, err := w32.User32GetClientRect.Call(e.hwnd, uintptr(unsafe.Pointer(&bounds)))
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	bounds, err := w32.GetClientRect(e.hwnd)
+	if err != nil {
 		e.errorCallback(err)
+		return
 	}
 
-	bounds.Top += e.padding.Top
-	bounds.Bottom -= e.padding.Bottom
-	bounds.Left += e.padding.Left
-	bounds.Right -= e.padding.Right
-
-	e.SetSize(bounds)
+	e.ResizeWithBounds(&bounds)
 }
 
 func (e *Chromium) Navigate(url string) {
-	_, _, err := e.webview.vtbl.Navigate.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(url))),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err := e.webview.Navigate(url)
+	if err != nil {
 		e.errorCallback(err)
 	}
 }
 
 func (e *Chromium) NavigateToString(content string) {
-	_, _, err := e.webview.vtbl.NavigateToString.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(content))),
-	)
-
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err := e.webview.NavigateToString(content)
+	if err != nil {
 		e.errorCallback(err)
 	}
 }
 
 func (e *Chromium) Init(script string) {
-	_, _, err := e.webview.vtbl.AddScriptToExecuteOnDocumentCreated.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(script))),
-		0,
-	)
-
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err := e.webview.AddScriptToExecuteOnDocumentCreated(script, nil)
+	if err != nil {
 		e.errorCallback(err)
 	}
 }
 
 func (e *Chromium) Eval(script string) {
-
-	if e.webview == nil {
+	if e.webview == nil || e.shuttingDown {
 		return
 	}
 
-	_script, err := windows.UTF16PtrFromString(script)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
-		e.errorCallback(err)
-	}
-
-	_, _, err = e.webview.vtbl.ExecuteScript.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(_script)),
-		0,
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) && !errors.Is(err, windows.ERROR_IO_PENDING) {
+	err := e.webview.ExecuteScript(script, nil)
+	if err != nil && !errors.Is(err, windows.ERROR_IO_PENDING) {
 		e.errorCallback(err)
 	}
 }
@@ -311,20 +316,12 @@ func (e *Chromium) EnvironmentCompleted(res uintptr, env *ICoreWebView2Environme
 	}
 
 	log.Printf("[WebView2] Environment created successfully\n")
+
+	env.vtbl.AddRef.Call(uintptr(unsafe.Pointer(env)))
 	e.environment = env
 
-	_, _, err := env.vtbl.AddRef.Call(uintptr(unsafe.Pointer(env)))
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
-		e.errorCallback(err)
-	}
-	e.environment = env
-
-	_, _, err = env.vtbl.CreateCoreWebView2Controller.Call(
-		uintptr(unsafe.Pointer(env)),
-		e.hwnd,
-		uintptr(unsafe.Pointer(e.controllerCompleted)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err := env.CreateCoreWebView2Controller(e.hwnd, e.controllerCompleted)
+	if err != nil {
 		e.errorCallback(err)
 	}
 	return 0
@@ -334,72 +331,58 @@ func (e *Chromium) CreateCoreWebView2ControllerCompleted(res uintptr, controller
 	if int32(res) < 0 {
 		e.errorCallback(fmt.Errorf("error creating controller with %08x: %s", res, syscall.Errno(res)))
 	}
-	_, _, err := controller.vtbl.AddRef.Call(uintptr(unsafe.Pointer(controller)))
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
-		e.errorCallback(err)
-	}
+
+	var err error
+
+	controller.vtbl.AddRef.Call(uintptr(unsafe.Pointer(controller)))
 	e.controller = controller
 
+	// Try to get ICoreWebView2Controller3 interface for better performance
+	if controller3 := e.controller.GetICoreWebView2Controller3(); controller3 != nil {
+		// Use raw pixels mode for better performance during resize
+		if err := controller3.PutBoundsMode(COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS); err != nil {
+			e.errorCallback(err)
+		}
+
+		// Disable monitor scale changes since we're using raw pixels
+		if err := controller3.PutShouldDetectMonitorScaleChanges(false); err != nil {
+			e.errorCallback(err)
+		}
+
+		// Set a fixed rasterization scale for better performance
+		if err := controller3.PutRasterizationScale(1.0); err != nil {
+			e.errorCallback(err)
+		}
+	}
 	var token _EventRegistrationToken
-	_, _, err = controller.vtbl.GetCoreWebView2.Call(
-		uintptr(unsafe.Pointer(controller)),
-		uintptr(unsafe.Pointer(&e.webview)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	e.webview, err = e.controller.GetCoreWebView2()
+	if err != nil {
 		e.errorCallback(err)
 	}
-	_, _, err = e.webview.vtbl.AddRef.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+
+	e.webview.vtbl.AddRef.Call(uintptr(unsafe.Pointer(e.webview)))
+	err = e.webview.AddWebMessageReceived(e.webMessageReceived, &token)
+	if err != nil {
 		e.errorCallback(err)
 	}
-	_, _, err = e.webview.vtbl.AddWebMessageReceived.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.webMessageReceived)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err = e.webview.AddPermissionRequested(e.permissionRequested, &token)
+	if err != nil {
 		e.errorCallback(err)
 	}
-	_, _, err = e.webview.vtbl.AddPermissionRequested.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.permissionRequested)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err = e.webview.AddWebResourceRequested(e.webResourceRequested, &token)
+	if err != nil {
 		e.errorCallback(err)
 	}
-	_, _, err = e.webview.vtbl.AddWebResourceRequested.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.webResourceRequested)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err = e.webview.AddNavigationCompleted(e.navigationCompleted, &token)
+	if err != nil {
 		e.errorCallback(err)
 	}
-	_, _, err = e.webview.vtbl.AddNavigationCompleted.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.navigationCompleted)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err = e.webview.AddProcessFailed(e.processFailed, &token)
+	if err != nil {
 		e.errorCallback(err)
 	}
-	_, _, err = e.webview.vtbl.AddProcessFailed.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.processFailed)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
-		e.errorCallback(err)
-	}
-	_, _, err = e.webview.vtbl.AddContainsFullScreenElementChanged.Call(
-		uintptr(unsafe.Pointer(e.webview)),
-		uintptr(unsafe.Pointer(e.containsFullScreenElementChanged)),
-		uintptr(unsafe.Pointer(&token)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err = e.webview.AddContainsFullScreenElementChanged(e.containsFullScreenElementChanged, &token)
+	if err != nil {
 		e.errorCallback(err)
 	}
 
@@ -421,16 +404,10 @@ func (e *Chromium) ContainsFullScreenElementChanged(sender *ICoreWebView2, args 
 }
 
 func (e *Chromium) MessageReceived(sender *ICoreWebView2, args *ICoreWebView2WebMessageReceivedEventArgs) uintptr {
-	var _message *uint16
-	_, _, err := args.vtbl.TryGetWebMessageAsString.Call(
-		uintptr(unsafe.Pointer(args)),
-		uintptr(unsafe.Pointer(&_message)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	message, err := args.TryGetWebMessageAsString()
+	if err != nil {
 		e.errorCallback(err)
 	}
-
-	message := w32.Utf16PtrToString(_message)
 
 	if HasCapability(e.webview2RuntimeVersion, GetAdditionalObjects) {
 		obj, err := args.GetAdditionalObjects()
@@ -448,14 +425,10 @@ func (e *Chromium) MessageReceived(sender *ICoreWebView2, args *ICoreWebView2Web
 		e.MessageCallback(message)
 	}
 
-	_, _, err = sender.vtbl.PostWebMessageAsString.Call(
-		uintptr(unsafe.Pointer(sender)),
-		uintptr(unsafe.Pointer(_message)),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) && !errors.Is(err, windows.ERROR_IO_PENDING) {
+	err = sender.PostWebMessageAsString(message)
+	if err != nil && !errors.Is(err, windows.ERROR_IO_PENDING) {
 		e.errorCallback(err)
 	}
-	windows.CoTaskMemFree(unsafe.Pointer(_message))
 	return 0
 }
 
@@ -490,12 +463,8 @@ func (e *Chromium) SetGlobalPermission(state CoreWebView2PermissionState) {
 }
 
 func (e *Chromium) PermissionRequested(_ *ICoreWebView2, args *iCoreWebView2PermissionRequestedEventArgs) uintptr {
-	var kind CoreWebView2PermissionKind
-	_, _, err := args.vtbl.GetPermissionKind.Call(
-		uintptr(unsafe.Pointer(args)),
-		uintptr(kind),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	kind, err := args.GetPermissionKind()
+	if err != nil {
 		e.errorCallback(err)
 	}
 	var result CoreWebView2PermissionState
@@ -508,11 +477,8 @@ func (e *Chromium) PermissionRequested(_ *ICoreWebView2, args *iCoreWebView2Perm
 			result = CoreWebView2PermissionStateDefault
 		}
 	}
-	_, _, err = args.vtbl.PutState.Call(
-		uintptr(unsafe.Pointer(args)),
-		uintptr(result),
-	)
-	if err != nil && !errors.Is(err, windows.ERROR_SUCCESS) {
+	err = args.PutState(result)
+	if err != nil {
 		e.errorCallback(err)
 	}
 	return 0
@@ -644,7 +610,7 @@ func (e *Chromium) GetIsSwipeNavigationEnabled() (bool, error) {
 	webview2Settings6 := webview2Settings.GetICoreWebView2Settings6()
 	var result bool
 	result, err = webview2Settings6.GetIsSwipeNavigationEnabled()
-	if !errors.Is(err, windows.DS_S_SUCCESS) {
+	if err != nil {
 		return false, err
 	}
 	return result, nil
@@ -695,7 +661,7 @@ func (e *Chromium) PutIsSwipeNavigationEnabled(enabled bool) error {
 	}
 	webview2Settings6 := webview2Settings.GetICoreWebView2Settings6()
 	err = webview2Settings6.PutIsSwipeNavigationEnabled(enabled)
-	if !errors.Is(err, windows.DS_S_SUCCESS) {
+	if err != nil {
 		return err
 	}
 	return nil
@@ -708,7 +674,7 @@ func (e *Chromium) AllowExternalDrag(allow bool) error {
 	controller := e.GetController()
 	controller4 := controller.GetICoreWebView2Controller4()
 	err := controller4.PutAllowExternalDrop(allow)
-	if !errors.Is(err, windows.DS_S_SUCCESS) {
+	if err != nil {
 		return err
 	}
 	return nil
@@ -721,7 +687,7 @@ func (e *Chromium) GetAllowExternalDrag() (bool, error) {
 	controller := e.GetController()
 	controller4 := controller.GetICoreWebView2Controller4()
 	result, err := controller4.GetAllowExternalDrop()
-	if !errors.Is(err, windows.DS_S_SUCCESS) {
+	if err != nil {
 		return false, err
 	}
 	return result, nil
