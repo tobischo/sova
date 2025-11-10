@@ -71,7 +71,7 @@ github.com/valyala/bytebufferpool
 # github.com/valyala/fasttemplate v1.2.2
 ## explicit; go 1.12
 github.com/valyala/fasttemplate
-# github.com/wailsapp/go-webview2 v1.0.19
+# github.com/wailsapp/go-webview2 v1.0.22
 ## explicit; go 1.20
 github.com/wailsapp/go-webview2/internal/w32
 github.com/wailsapp/go-webview2/pkg/combridge
@@ -83,7 +83,7 @@ github.com/wailsapp/mimetype
 github.com/wailsapp/mimetype/internal/charset
 github.com/wailsapp/mimetype/internal/json
 github.com/wailsapp/mimetype/internal/magic
-# github.com/wailsapp/wails/v2 v2.10.2
+# github.com/wailsapp/wails/v2 v2.11.0
 ## explicit; go 1.22.0
 github.com/wailsapp/wails/v2
 github.com/wailsapp/wails/v2/internal/app
@@ -98,13 +98,16 @@ github.com/wailsapp/wails/v2/internal/frontend/desktop/windows/winc
 github.com/wailsapp/wails/v2/internal/frontend/desktop/windows/winc/w32
 github.com/wailsapp/wails/v2/internal/frontend/devserver
 github.com/wailsapp/wails/v2/internal/frontend/dispatcher
+github.com/wailsapp/wails/v2/internal/frontend/originvalidator
 github.com/wailsapp/wails/v2/internal/frontend/runtime
 github.com/wailsapp/wails/v2/internal/frontend/runtime/wrapper
+github.com/wailsapp/wails/v2/internal/frontend/utils
 github.com/wailsapp/wails/v2/internal/fs
 github.com/wailsapp/wails/v2/internal/go-common-file-dialog/cfd
 github.com/wailsapp/wails/v2/internal/goversion
 github.com/wailsapp/wails/v2/internal/logger
 github.com/wailsapp/wails/v2/internal/menumanager
+github.com/wailsapp/wails/v2/internal/platform/win32
 github.com/wailsapp/wails/v2/internal/project
 github.com/wailsapp/wails/v2/internal/shell
 github.com/wailsapp/wails/v2/internal/signal
