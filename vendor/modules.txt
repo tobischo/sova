@@ -95,8 +95,8 @@ github.com/wailsapp/go-webview2/internal/w32
 github.com/wailsapp/go-webview2/pkg/combridge
 github.com/wailsapp/go-webview2/pkg/edge
 github.com/wailsapp/go-webview2/webviewloader
-# github.com/wailsapp/wails/v2 v2.17.0
-## explicit; go 1.25.0
+# github.com/wailsapp/wails/v2 v2.17.1
+## explicit; go 1.26.0
 github.com/wailsapp/wails/v2
 github.com/wailsapp/wails/v2/internal/app
 github.com/wailsapp/wails/v2/internal/binding
